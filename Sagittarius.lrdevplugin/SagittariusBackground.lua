@@ -3,7 +3,10 @@ LOG_FILENAME = "libraryLogger"
 KML_DATA_FOLDER = [[C:\Qiu\Library\Astrology\Sagittarius Lightroom\LocationData\]]
 PROCESSED_FILE_LIST = _PLUGIN.path .. [[\ProcessedFiles.txt]]
 GPS_DATA_FOLDER = _PLUGIN.path .. [[\GPSData\]]
-CAMERA_TIME_ZONE = 4
+CAMERA_TIME_ZONE = 5
+
+local LrApplication = import 'LrApplication'
+local catalog = LrApplication.activeCatalog()
 
 -- Log File
 local LrLogger = import 'LrLogger'
@@ -97,6 +100,22 @@ function GetDateTime( kmlWhenTag )
 	return utcDate, utcTime
 end
 
+-- Get GPS Lat Log
+function GetLatLog( kmlGXTag )
+	kmlGXTag = TrimString(kmlGXTag)
+	local gxData = string.gsub(kmlGXTag, "<gx:coord>", "")
+	gxData = string.gsub(gxData, "</gx:coord>", "")
+	local x = string.find(gxData, "%s[^%s]*$")
+	gxData = string.sub(gxData, 1, x - 1)
+	x = string.find(gxData, "%s[^%s]*$")
+	local log = string.sub(gxData, 1, x - 1)
+	local lat = string.sub(gxData, x + 1, -1)
+	return {
+		latitude = tonumber(lat), 
+		longitude = tonumber(log),
+	}
+end
+
 -- Process KML files
 function ProcessGPSFile( fileEntry )
 	-- Check if file is already been processed
@@ -136,6 +155,67 @@ function ProcessGPSFile( fileEntry )
 	end
 end
 
+-- Convert gps datetime to seconds
+function ConvertDateTime( kmlWhenTag )
+	local utcDate, utcTime = GetDateTime(kmlWhenTag)
+	return {
+		year = tonumber(string.sub(utcDate, 1, 4)),
+		month = tonumber(string.sub(utcDate, 6, 7)),
+		day = tonumber(string.sub(utcDate, 9, 10)),
+		hour = tonumber(string.sub(utcTime, 1, 2)),
+		min = tonumber(string.sub(utcTime, 4, 5)),
+		sec = tonumber(string.sub(utcTime, 7, 8)),
+		isdst = false,
+	}
+end
+
+-- Tag photo with GPS lat and log
+function TagPhoto( photo, kmlGXTag )
+	photo:setRawMetadata("gps", GetLatLog(kmlGXTag))
+	OutputToLog("Added GPS Data")
+end
+
+-- Check GPS Data
+function CheckGPSData( photo )
+	-- Get photo capture time in seconds since 1/1/2001
+	local rawPhotoTime = photo:getRawMetadata("dateTimeOriginal")
+	if rawPhotoTime == nil then return end
+	local sec2001 = os.time{year = 2001, month = 1, day = 1, hour = 0}
+	local secPhotoTime = rawPhotoTime + sec2001
+	local photoDate = os.date("%Y-%m-%d", secPhotoTime)
+	local indexFile = io.open(GPS_DATA_FOLDER .. photoDate .. ".dat", "r")
+	if indexFile == nil then
+		return 
+	end
+	-- The max allowed difference between GPS time and photo time in seconds
+	local secT = 1200
+	local secMinDiff = 36000
+	-- Find the closest GPS tag
+	local secMinTime, tagMinCoord
+	local line = indexFile:read()
+	while line do
+		if string.find(line, "<when>") then
+			local kmlWhenTag = line
+			local kmlGXTag = indexFile:read()
+			local secGPSTime = os.time(ConvertDateTime(kmlWhenTag))
+			local diff = math.abs(secGPSTime - secPhotoTime)
+			if diff < secMinDiff then
+				secMinDiff = diff
+				secMinTime = secGPSTime
+				tagMinCoord = kmlGXTag
+			end
+		end
+		line = indexFile:read()
+	end
+	-- Add GeoTag to photo
+	if secMinDiff < secT then
+		catalog:withWriteAccessDo("GeoTag Photo", function ()
+			photo:setRawMetadata("gps", GetLatLog(tagMinCoord))
+			OutputToLog("Added GPS Data")
+		end)
+	end
+end
+
 -- Process Photos
 function ProcessPhotos()
 	local LrProgressScope = import 'LrProgressScope'
@@ -145,8 +225,8 @@ function ProcessPhotos()
 			{
 				criteria = "captureTime",
 				operation = "in",
-				value = "2011-02-12",
-				value2 = "2012-02-12",
+				value = "2013-03-30",
+				value2 = "2013-03-30",
 			},
 			{
 				criteria = "hasGPSData",
@@ -163,6 +243,7 @@ function ProcessPhotos()
 	for i, photo in ipairs( photos ) do
 		if progressScope:isCanceled() then break end
 		OutputToLog(photo:getFormattedMetadata('fileName'))
+		CheckGPSData(photo)
 		progressScope:setPortionComplete( i, #photos )
 	end
 	progressScope:done()
@@ -173,6 +254,7 @@ function SagTask()
 	for _, fileEntry in ipairs(ScanGPSFiles(KML_DATA_FOLDER)) do
 		ProcessGPSFile(fileEntry)
 	end
+	ProcessPhotos()
 end
 
 import "LrTasks".startAsyncTask(SagTask)
