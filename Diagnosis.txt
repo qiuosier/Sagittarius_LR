@@ -1,0 +1,17 @@
+Plug-in error log for plug-in at: C:\Qiu\Library\Astrology\Sagittarius Lightroom\Sagittarius LR\Sagittarius.lrdevplugin
+
+**** Error 1
+
+An error occurred while attempting to run one of the plug-in’s scripts.
+SagittariusBackground.lua:60: 'do' expected near '='
+
+**** Error 2
+
+An error occurred while attempting to start the plugin.
+SagittariusBackground.lua:60: 'do' expected near '='
+
+**** Error 3
+
+Could not add a menu item for this plug-in.
+SagittariusBackground.lua:60: 'do' expected near '='
+
