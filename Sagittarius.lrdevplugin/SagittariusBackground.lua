@@ -2,6 +2,8 @@
 LOG_FILENAME = "libraryLogger"
 KML_DATA_FOLDER = [[C:\Qiu\Library\Astrology\Sagittarius Lightroom\LocationData\]]
 PROCESSED_FILE_LIST = _PLUGIN.path .. [[\ProcessedFiles.txt]]
+GPS_DATA_FOLDER = _PLUGIN.path .. [[\GPSData\]]
+CAMERA_TIME_ZONE = 4
 
 -- Log File
 local LrLogger = import 'LrLogger'
@@ -12,20 +14,17 @@ function OutputToLog( message )
 	myLogger:trace( message )
 end
 
--- Set Path
-
-
-
 -- Validate File
-function ValidateKML( filename )
-	local file = io.open(filename, "r")
+function ValidateKML( filePath )
+	local file = io.open(filePath, "r")
 	if file == nil then return false end
 	for i = 1, 3 do
 		local line = ""
 		while string.len(line) == 0 do
 			line = file:read("*line")
 		end
-		if string.find(string.uppper(line), "<KML") then
+		if string.find(string.upper(line), "<KML") then
+			OutputToLog("File is Validated")
 			return true
 		end
 	end
@@ -54,7 +53,7 @@ end
 -- Get Filename
 function GetFileName( dirOutput )
 	local x = string.find(dirOutput, "%s[^%s]*$")
-	return string.sub(dirOutput, x, -1)
+	return string.sub(dirOutput, x + 1, -1)
 end
 
 -- Check processed file
@@ -65,7 +64,6 @@ function CheckProcessedFiles( fileEntry )
 	local line = file:read()
 	while line do
 		if fileEntry == line then 
-			OutputToLog("File already processed")
 			return true 
 		end
 		line = file:read()
@@ -84,10 +82,57 @@ function AddProcessedFile( fileEntry )
 	file:close()
 end
 
+-- Trim String
+function TrimString(s)
+  return (s:gsub("^%s*(.-)%s*$", "%1"))
+end
+
+-- Get Date and Time
+function GetDateTime( kmlWhenTag )
+	kmlWhenTag = TrimString(kmlWhenTag)
+	local utcDateTime = string.gsub(kmlWhenTag, "<when>", "")
+	utcDateTime = string.gsub(utcDateTime, "</when>", "")
+	utcDate = string.sub(utcDateTime, 1, 10)
+	utcTime = string.sub(utcDateTime, 12, -2)
+	return utcDate, utcTime
+end
+
 -- Process KML files
 function ProcessGPSFile( fileEntry )
+	-- Check if file is already been processed
 	if not CheckProcessedFiles(fileEntry) then
-		AddProcessedFile(fileEntry)
+		local filename = GetFileName(fileEntry)
+		local filePath = KML_DATA_FOLDER .. filename
+		-- Check if the file is validate
+		if ValidateKML(filePath) then
+			local file = io.open(filePath, "r")
+			if file == nil then return false end
+			-- Process the file
+			local indexFile = nil
+			local indexDate = nil
+			local line = file:read()
+			while line do
+				if string.find(line, "<when>") then
+					local utcDateTime = line
+					local gpsCoord = file:read()
+					local utcDate, utcTime = GetDateTime(utcDateTime)
+					if (indexFile == nil) or (indexDate ~= utcDate) then
+						-- Close previous file
+						if (indexFile ~= nil) then indexFile:close() end
+						-- Open new file
+						indexDate = utcDate
+						indexFile = io.open(GPS_DATA_FOLDER .. indexDate .. ".dat", "a")
+					end
+					-- Add entry to file
+					indexFile:write(utcDateTime .. "\n")
+					indexFile:write(gpsCoord .. "\n")
+				end
+				line = file:read()
+			end
+			if (indexFile ~= nil) then indexFile:close() end
+			file:close()
+			AddProcessedFile(fileEntry)
+		end
 	end
 end
 

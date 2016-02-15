@@ -17,8 +17,8 @@ return {
 	LrForceInitPlugin = true,
 
 	LrLibraryMenuItems = {
-		title = 'GPS Matcher Dialog',
-		file = 'SagittariusConfig.lua',
+		title = 'Run Sagittarius',
+		file = 'SagittariusBackground.lua',
 	},
 
 	VERSION = { major=1, minor=0, revision=0, build=1200, },
